@@ -2,10 +2,12 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from typing import List, Dict, Any
 
+
 from text-to-sql-sidecar.db_registry import list_databases, get_db_uri
 from text-to-sql-sidecar.validator import validate_sql, set_allowed_tables
 from text-to-sql-sidecar.schema_cache import get_schema
 # from text-to-sql-sidecar.executor import execute_query  # To be implemented
+from text-to-sql-sidecar.llm_client import generate_sql
 
 app = FastAPI()
 
@@ -35,11 +37,19 @@ def get_tables(db: str = Query(..., description="Database key")):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
 @app.post("/query")
 def post_query(req: QueryRequest):
-    """Validate and execute a query (stub)."""
+    """Generate SQL from NL, validate, and (stub) execute."""
     try:
-        sql = req.sql or f"SELECT * FROM {req.question}"  # Placeholder for LLM
+        # If direct SQL is provided, use it; otherwise, generate SQL from NL
+        if req.sql:
+            sql = req.sql
+        else:
+            schema = get_schema(req.db_key)
+            # Format schema as string for prompt
+            schema_str = "\n".join([f"Table {t}: {', '.join(cols)}" for t, cols in schema.items()])
+            sql = generate_sql(schema_str, req.question)
         validated_sql = validate_sql(sql, req.db_key)
         # results = execute_query(validated_sql, req.db_key)  # To be implemented
         results = [{"demo": "result"}]  # Placeholder
