@@ -6,7 +6,8 @@ from text_to_sql_sidecar.db_registry import list_databases, get_db_uri
 from text_to_sql_sidecar.validator import validate_sql, set_allowed_tables
 from text_to_sql_sidecar.schema_cache import get_schema
 from text_to_sql_sidecar.executor import execute_query
-from text_to_sql_sidecar.llm_client import generate_sql
+from text_to_sql_sidecar.llm_client import generate_sql, generate_sql_with_reasoning
+from text_to_sql_sidecar.schema_filter import filter_schema_by_relevance
 
 app = FastAPI()
 
@@ -54,14 +55,20 @@ def get_tables(db: str = Query(..., description="Database key")):
 @app.post("/query")
 def post_query(req: QueryRequest):
     try:
+        reasoning = None
         if req.sql:
             sql = req.sql
         else:
             schema = get_schema(req.db_key)
-            schema_str = "\n".join([f"Table {t}: {', '.join(cols)}" for t, cols in schema.items()])
-            sql = generate_sql(schema_str, req.question)
+            filtered_schema = filter_schema_by_relevance(req.question, schema)
+            schema_str = "\n".join([f"Table {t}: {', '.join(cols)}" for t, cols in filtered_schema.items()])
+            reasoning, sql = generate_sql_with_reasoning(schema_str, req.question)
+            print(f"[DEBUG] Reasoning: {reasoning}")
         validated_sql = validate_sql(sql, req.db_key)
         results = execute_query(req.db_key, validated_sql)
-        return {"sql": validated_sql, "results": results}
+        response = {"sql": validated_sql, "results": results}
+        if reasoning:
+            response["reasoning"] = reasoning
+        return response
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

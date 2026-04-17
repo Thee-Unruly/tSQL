@@ -11,6 +11,7 @@ export interface Schema {
 export interface QueryResult {
     sql: string;
     results: Record<string, unknown>[];
+    reasoning?: string;
 }
 
 export const fetchDatabases = async (): Promise<Database> => {

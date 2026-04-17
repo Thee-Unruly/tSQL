@@ -15,6 +15,12 @@ export default function ResultsTable({ result, error }: Props) {
 
     return (
         <div className="results-panel">
+            {result.reasoning && (
+                <>
+                    <span className="reasoning-label">LLM Reasoning</span>
+                    <p className="reasoning-text">{result.reasoning}</p>
+                </>
+            )}
             <span className="sql-label">Generated SQL</span>
             <pre className="sql-block">{result.sql}</pre>
 

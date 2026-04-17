@@ -406,7 +406,8 @@
 }
 
 .sql-label,
-.results-label {
+.results-label,
+.reasoning-label {
   font-size: 0.65rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -425,6 +426,17 @@
   white-space: pre-wrap;
   overflow-x: auto;
   line-height: 1.55;
+}
+
+.reasoning-text {
+  background: #F7F5F0;
+  border-left: 3px solid #DAC9B5;
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  color: #4a4541;
+  line-height: 1.5;
+  margin: 0;
 }
 
 .table-wrapper {
