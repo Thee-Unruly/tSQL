@@ -26,8 +26,12 @@ def get_databases():
 def get_tables(db: str = Query(..., description="Database key")):
     try:
         schema = get_schema(db)
+        print(f"[DEBUG] Schema for {db}: {schema}")
         return {"tables": schema}
     except Exception as e:
+        import traceback
+        print(f"[ERROR] Exception in /tables: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/query")
