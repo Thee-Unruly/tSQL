@@ -6,9 +6,7 @@ LITELLM_API_URL = os.getenv("LITELLM_API_URL", "http://localhost:7072/v1/chat/co
 LITELLM_API_KEY = os.getenv("LITELLM_API_KEY", "sk-A2PqYnyEcNmuRSMQerWgiDIs")
 
 PROMPT_TEMPLATE = """
-You are an expert PostgreSQL data analyst. 
-
-Given the following database schema and a question, first reason through the problem, then write a valid PostgreSQL SQL query.
+You are an expert PostgreSQL data analyst. Write ONLY valid, executable PostgreSQL SQL.
 
 Schema:
 {schema}
@@ -16,16 +14,30 @@ Schema:
 Question:
 {question}
 
-Follow these steps:
-1. REASONING: Analyze the question and identify which tables and columns are needed
-2. SQL: Write the valid PostgreSQL SQL query
+CRITICAL SQL RULES:
+1. For "top N by column" queries: SELECT * FROM table ORDER BY column DESC LIMIT N
+   - Example: "top 10 products in ratings" → ORDER BY rating DESC LIMIT 10
+   - Do NOT calculate averages, divisions, or aggregates unless the question explicitly asks for them
+2. Do NOT use aggregate functions (SUM, COUNT, AVG) unless the question says "total", "count", "average", "sum"
+3. Do NOT invent calculations or columns that don't exist
+4. Column names are case-sensitive - match the schema exactly
+5. Use CAST when needed: CAST(column AS numeric)
+6. Always validate that columns exist in the schema before using them
 
-Format your response as:
+SAFE PATTERN FOR "TOP N":
+- Question: "What top 10 products in ratings?"
+- Answer: SELECT * FROM sales_ ORDER BY rating DESC LIMIT 10;
+
+Follow these steps:
+1. REASONING: Is this a "top N" query? If yes, just ORDER BY DESC LIMIT N. If it needs aggregation, be explicit.
+2. SQL: Write the simplest valid query that answers the question.
+
+Format:
 REASONING:
-[Your analysis here]
+[One sentence: what columns to use and why]
 
 SQL:
-[Your SQL query here]
+[Single SQL statement only]
 """
 
 def build_prompt(schema: str, question: str) -> str:

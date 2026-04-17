@@ -10,7 +10,7 @@ def set_allowed_tables(allowed: Dict[str, Set[str]]):
 
 def validate_sql(query: str, db_key: str) -> str:
     try:
-        parsed = sqlglot.parse_one(query)
+        parsed = sqlglot.parse_one(query, dialect='postgres')
     except Exception as e:
         raise ValueError(f"SQL parse failed: {e}")
 
