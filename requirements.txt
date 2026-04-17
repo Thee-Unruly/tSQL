@@ -4,5 +4,4 @@ sqlalchemy
 sqlglot
 python-dotenv
 requests
-streamlit
 pydantic
