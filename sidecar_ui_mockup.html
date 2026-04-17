@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Database AI Sidecar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #0f172a;
+      --bg-panel: #1e293b;
+      --bg-panel-hover: #334155;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-gradient: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      --accent-color: #8b5cf6;
+      --success-color: #10b981;
+      --danger-color: #ef4444;
+      --warning-color: #f59e0b;
+      
+      --font-ui: 'Inter', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      font-family: var(--font-ui);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    /* Container holding the app */
+    .app-container {
+      width: 100%;
+      max-width: 1000px;
+      height: 700px;
+      background-color: #0f172a;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-color);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.05);
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Subtle background glow effect */
+    .app-container::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      background: rgba(30, 41, 59, 0.5);
+      backdrop-filter: blur(12px);
+      border-right: 1px solid var(--border-color);
+      padding: 1.5rem 1rem;
+      display: flex;
+      flex-direction: column;
+      z-index: 1;
+    }
+
+    .section-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 0.75rem;
+      padding: 0 0.5rem;
+    }
+
+    .db-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .db-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 1px solid transparent;
+    }
+
+    .db-item:hover {
+      background: rgba(255, 255, 255, 0.03);
+      border-color: rgba(255, 255, 255, 0.05);
+      transform: translateY(-1px);
+    }
+
+    .db-item.active {
+      background: rgba(139, 92, 246, 0.1);
+      border-color: rgba(139, 92, 246, 0.2);
+    }
+
+    .db-item.active .db-name {
+      color: #c4b5fd;
+    }
+
+    .status-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success-color);
+      box-shadow: 0 0 8px var(--success-color);
+    }
+    
+    .status-indicator.offline {
+      background: var(--text-muted);
+      box-shadow: none;
+    }
+
+    .db-info {
+      flex: 1;
+    }
+
+    .db-name {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-main);
+      margin-bottom: 0.25rem;
+    }
+
+    .db-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .table-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      padding: 0 0.5rem;
+    }
+
+    .chip {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      padding: 0.25rem 0.5rem;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: #cbd5e1;
+      transition: all 0.2s ease;
+      cursor: default;
+    }
+
+    .chip:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: scale(1.05);
+    }
+
+    /* Main Content */
+    .main-content {
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-base);
+      z-index: 1;
+    }
+
+    .header {
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(8px);
+    }
+
+    .header-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      padding: 0.2rem 0.6rem;
+      background: rgba(59, 130, 246, 0.15);
+      color: #93c5fd;
+      border-radius: 12px;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    .chat-area {
+      flex: 1;
+      padding: 2rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+    
+    /* Scrollbar */
+    .chat-area::-webkit-scrollbar {
+      width: 6px;
+    }
+    .chat-area::-webkit-scrollbar-thumb {
+      background-color: var(--bg-panel-hover);
+      border-radius: 10px;
+    }
+
+    .user-prompt {
+      display: flex;
+      gap: 1rem;
+    }
+
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--accent-gradient);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 0.875rem;
+      color: white;
+      flex-shrink: 0;
+      box-shadow: 0 4px 10px rgba(139, 92, 246, 0.3);
+    }
+
+    .prompt-text {
+      font-size: 0.95rem;
+      line-height: 1.5;
+      color: var(--text-main);
+      padding-top: 0.3rem;
+    }
+
+    .ai-response {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      padding-left: 3rem;
+    }
+
+    .code-block {
+      background: #00000040;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+
+    .code-header {
+      background: rgba(255, 255, 255, 0.03);
+      padding: 0.5rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .code-content {
+      padding: 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      line-height: 1.6;
+      color: #e2e8f0;
+      overflow-x: auto;
+    }
+
+    .keyword { color: #c678dd; }
+    .string { color: #98c379; }
+    .function { color: #61afef; }
+    .number { color: #d19a66; }
+
+    .result-table-container {
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: rgba(30, 41, 59, 0.3);
+    }
+    
+    .result-meta {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    .table th, .table td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .table th {
+      background: rgba(255, 255, 255, 0.02);
+      font-weight: 500;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+    }
+
+    .table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .val-number { color: var(--warning-color); font-family: var(--font-mono); }
+    .val-date { color: var(--text-muted); font-family: var(--font-mono); }
+
+    /* Input area */
+    .input-area {
+      padding: 1.5rem 2rem;
+      background: var(--bg-base);
+      border-top: 1px solid var(--border-color);
+    }
+
+    .input-box {
+      display: flex;
+      background: rgba(30, 41, 59, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 0.5rem;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .input-box:focus-within {
+      border-color: var(--accent-color);
+      background: rgba(30, 41, 59, 0.9);
+      box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+    }
+
+    .input-box input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      padding: 0.75rem 1rem;
+      color: var(--text-main);
+      font-family: var(--font-ui);
+      font-size: 0.95rem;
+    }
+
+    .input-box input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .btn-submit {
+      background: var(--accent-gradient);
+      border: none;
+      border-radius: var(--radius-md);
+      color: white;
+      font-weight: 500;
+      padding: 0 1.5rem;
+      cursor: pointer;
+      transition: opacity 0.2s;
+      font-family: var(--font-ui);
+    }
+
+    .btn-submit:hover {
+      opacity: 0.9;
+    }
+
+    /* Micro animations */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .animated {
+      animation: fadeIn 0.4s ease forwards;
+    }
+    
+    .delay-1 { animation-delay: 0.1s; opacity: 0; }
+    .delay-2 { animation-delay: 0.2s; opacity: 0; }
+  </style>
+</head>
+<body>
+
+  <div class="app-container">
+    <aside class="sidebar">
+      <div class="section-title">Connected Databases</div>
+      
+      <div class="db-list">
+        <div class="db-item active">
+          <div class="status-indicator"></div>
+          <div class="db-info">
+            <div class="db-name">PostgreSQL</div>
+            <div class="db-desc">prod-warehouse</div>
+          </div>
+        </div>
+
+        <div class="db-item">
+          <div class="status-indicator" style="background: #3b82f6; box-shadow: 0 0 8px #3b82f6;"></div>
+          <div class="db-info">
+            <div class="db-name">MySQL</div>
+            <div class="db-desc">crm-db</div>
+          </div>
+        </div>
+
+        <div class="db-item">
+          <div class="status-indicator" style="background: #f59e0b; box-shadow: 0 0 8px #f59e0b;"></div>
+          <div class="db-info">
+            <div class="db-name">BigQuery</div>
+            <div class="db-desc">analytics</div>
+          </div>
+        </div>
+
+        <div class="db-item">
+          <div class="status-indicator offline"></div>
+          <div class="db-info">
+            <div class="db-name" style="color: var(--text-muted)">Redshift</div>
+            <div class="db-desc">disconnected</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex-grow: 1;"></div>
+
+      <div class="section-title">Tables in Context</div>
+      <div class="table-chips">
+        <div class="chip">product_master</div>
+        <div class="chip">inventory</div>
+        <div class="chip">orders</div>
+        <div class="chip">+ 4 more</div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="header">
+        <div class="status-indicator"></div>
+        <div class="header-title">
+          prod-warehouse <span class="badge">PostgreSQL</span>
+        </div>
+      </header>
+
+      <div class="chat-area">
+        <div class="user-prompt animated">
+          <div class="avatar">U</div>
+          <div class="prompt-text">
+            Which products are low on stock and haven't been restocked in the last 30 days?
+          </div>
+        </div>
+
+        <div class="ai-response">
+          <div class="code-block animated delay-1">
+            <div class="code-header">
+              <span>Generated SQL</span>
+              <span style="color: var(--success-color); cursor: pointer; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">Copy code</span>
+            </div>
+            <div class="code-content">
+              <span class="keyword">SELECT</span> p.product_name, i.quantity, i.last_restocked<br>
+              <span class="keyword">FROM</span> product_master p<br>
+              <span class="keyword">JOIN</span> inventory i <span class="keyword">ON</span> p.id = i.product_id<br>
+              <span class="keyword">WHERE</span> i.quantity &lt; <span class="number">10</span><br>
+              &nbsp;&nbsp;<span class="keyword">AND</span> i.last_restocked &lt; <span class="function">NOW</span>() - <span class="keyword">INTERVAL</span> <span class="string">'30 days'</span><br>
+              <span class="keyword">ORDER BY</span> i.quantity <span class="keyword">ASC</span>;
+            </div>
+          </div>
+
+          <div class="animated delay-2">
+            <div class="result-meta">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+              Query Results (4 rows retrieved)
+            </div>
+            <div class="result-table-container">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>product_name</th>
+                    <th>quantity</th>
+                    <th>last_restocked</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Widget A</td>
+                    <td class="val-number" style="color: var(--danger-color)">3</td>
+                    <td class="val-date">2025-03-01</td>
+                  </tr>
+                  <tr>
+                    <td>Gadget B</td>
+                    <td class="val-number" style="color: var(--warning-color)">7</td>
+                    <td class="val-date">2025-02-14</td>
+                  </tr>
+                  <tr>
+                    <td>Part C</td>
+                    <td class="val-number" style="color: var(--danger-color)">2</td>
+                    <td class="val-date">2025-02-28</td>
+                  </tr>
+                  <tr>
+                    <td>Component D</td>
+                    <td class="val-number" style="color: var(--success-color)">9</td>
+                    <td class="val-date">2025-03-05</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-area">
+        <div class="input-box">
+          <input type="text" placeholder="Ask anything about this database...">
+          <button class="btn-submit">Run query</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+</body>
+</html>
