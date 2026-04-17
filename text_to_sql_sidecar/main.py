@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 from text_to_sql_sidecar.db_registry import list_databases, get_db_uri
 from text_to_sql_sidecar.validator import validate_sql, set_allowed_tables
 from text_to_sql_sidecar.schema_cache import get_schema
-#from text_to_sql_sidecar.executor import execute_query  # To be implemented
+from text_to_sql_sidecar.executor import execute_query
 from text_to_sql_sidecar.llm_client import generate_sql
 
 app = FastAPI()
@@ -19,9 +19,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-set_allowed_tables({
-    "postgres-local": {"your_table1", "your_table2"},
-})
+# Load allowed tables from actual database schemas
+allowed_tables = {}
+for db_key in list_databases().keys():
+    try:
+        schema = get_schema(db_key)
+        allowed_tables[db_key] = set(schema.keys())
+    except Exception as e:
+        print(f"[WARN] Could not load schema for {db_key}: {e}")
+
+set_allowed_tables(allowed_tables)
 
 class QueryRequest(BaseModel):
     db_key: str
@@ -54,8 +61,7 @@ def post_query(req: QueryRequest):
             schema_str = "\n".join([f"Table {t}: {', '.join(cols)}" for t, cols in schema.items()])
             sql = generate_sql(schema_str, req.question)
         validated_sql = validate_sql(sql, req.db_key)
-        # results = execute_query(validated_sql, req.db_key)  # To be implemented
-        results = [{"demo": "result"}]
+        results = execute_query(req.db_key, validated_sql)
         return {"sql": validated_sql, "results": results}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

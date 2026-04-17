@@ -37,4 +37,11 @@ def generate_sql(schema: str, question: str, model: str = "gemma2-9b") -> str:
     resp = requests.post(LITELLM_API_URL, headers=headers, json=payload)
     resp.raise_for_status()
     sql = resp.json()["choices"][0]["message"]["content"].strip()
+    # Strip markdown code fences if the model wrapped the SQL
+    if "```" in sql:
+        lines = sql.split("\n")
+        lines = [l for l in lines if not l.strip().startswith("```")]
+        sql = "\n".join(lines).strip()
+    # Remove any remaining backticks
+    sql = sql.replace("`", "")
     return sql
