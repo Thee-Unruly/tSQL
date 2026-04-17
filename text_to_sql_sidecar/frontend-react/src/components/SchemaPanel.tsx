@@ -1,4 +1,4 @@
-import { Schema } from "../api";
+import type { Schema } from "../api";
 
 interface Props {
     schema: Schema;

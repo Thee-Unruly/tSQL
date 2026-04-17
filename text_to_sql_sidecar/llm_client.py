@@ -19,7 +19,7 @@ SQL:
 def build_prompt(schema: str, question: str) -> str:
     return PROMPT_TEMPLATE.format(schema=schema, question=question)
 
-def generate_sql(schema: str, question: str, model: str = "sqlcoder") -> str:
+def generate_sql(schema: str, question: str, model: str = "gemma2-9b") -> str:
     prompt = build_prompt(schema, question)
     headers = {
         "Authorization": f"Bearer {LITELLM_API_KEY}",

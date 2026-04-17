@@ -1,4 +1,4 @@
-import { QueryResult } from "../api";
+import type { QueryResult } from "../api";
 
 interface Props {
     result: QueryResult | null;
@@ -15,12 +15,12 @@ export default function ResultsTable({ result, error }: Props) {
 
     return (
         <div className="results-panel">
-            <h3 className="panel-title">✅ Generated SQL</h3>
+            <span className="sql-label">Generated SQL</span>
             <pre className="sql-block">{result.sql}</pre>
 
-            <h3 className="panel-title">📊 Results</h3>
+            <span className="results-label">Results</span>
             {result.results.length === 0 ? (
-                <p className="no-tables">Query executed successfully, but no results returned.</p>
+                <p className="empty-results">Query executed successfully, but no rows returned.</p>
             ) : (
                 <div className="table-wrapper">
                     <table className="results-table">

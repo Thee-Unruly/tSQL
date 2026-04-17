@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any
 from text_to_sql_sidecar.db_registry import list_databases, get_db_uri
@@ -8,6 +9,15 @@ from text_to_sql_sidecar.schema_cache import get_schema
 from text_to_sql_sidecar.llm_client import generate_sql
 
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 set_allowed_tables({
     "postgres-local": {"your_table1", "your_table2"},
