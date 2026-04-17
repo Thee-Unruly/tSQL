@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Any
 from text_to_sql_sidecar.db_registry import list_databases, get_db_uri
 from text_to_sql_sidecar.validator import validate_sql, set_allowed_tables
-from text_to_sql_sidecar.schema_cache import get_schema
+from text_to_sql_sidecar.schema_cache import get_schema, get_schema_with_types
 from text_to_sql_sidecar.executor import execute_query
 from text_to_sql_sidecar.llm_client import generate_sql, generate_sql_with_reasoning
 from text_to_sql_sidecar.schema_filter import filter_schema_by_relevance
@@ -60,8 +60,15 @@ def post_query(req: QueryRequest):
             sql = req.sql
         else:
             schema = get_schema(req.db_key)
+            schema_types = get_schema_with_types(req.db_key)
             filtered_schema = filter_schema_by_relevance(req.question, schema)
-            schema_str = "\n".join([f"Table {t}: {', '.join(cols)}" for t, cols in filtered_schema.items()])
+            # Build schema string with column types so LLM knows to CAST text columns
+            schema_lines = []
+            for t, cols in filtered_schema.items():
+                col_type_map = schema_types.get(t, {})
+                col_strs = [f"{c} ({col_type_map.get(c, 'unknown')})" for c in cols]
+                schema_lines.append(f"Table {t}: {', '.join(col_strs)}")
+            schema_str = "\n".join(schema_lines)
             reasoning, sql = generate_sql_with_reasoning(schema_str, req.question)
             print(f"[DEBUG] Reasoning: {reasoning}")
         validated_sql = validate_sql(sql, req.db_key)

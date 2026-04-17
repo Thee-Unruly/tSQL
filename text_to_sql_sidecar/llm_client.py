@@ -15,13 +15,11 @@ Question:
 {question}
 
 CRITICAL SQL RULES:
-1. For "top N by column" queries: SELECT * FROM table ORDER BY column DESC LIMIT N
-   - Example: "top 10 products in ratings" → ORDER BY rating DESC LIMIT 10
-   - Do NOT calculate averages, divisions, or aggregates unless the question explicitly asks for them
-2. Do NOT use aggregate functions (SUM, COUNT, AVG) unless the question says "total", "count", "average", "sum"
-3. Do NOT invent calculations or columns that don't exist
-4. Column names are case-sensitive - match the schema exactly
-5. Use CAST when needed: CAST(column AS numeric)
+1. For "top N by column" queries: SELECT * FROM table ORDER BY column DESC NULLS LAST LIMIT N
+2. If a column type is TEXT or VARCHAR but contains numbers, use CAST: ORDER BY CAST(column AS numeric) DESC NULLS LAST
+3. Do NOT use aggregate functions (SUM, COUNT, AVG) unless the question says "total", "count", "average", "sum"
+4. Do NOT invent columns that don't exist in the schema
+5. Column types are shown in parentheses — use them to decide when to CAST
 6. Always validate that columns exist in the schema before using them
 
 SAFE PATTERN FOR "TOP N":
