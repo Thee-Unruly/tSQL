@@ -27,4 +27,14 @@ def validate_sql(query: str, db_key: str) -> str:
     if not parsed.find(exp.Limit):
         query = query.rstrip(';') + " LIMIT 100"
 
+    # Add NULLS LAST to all DESC order expressions so NULLs/empty values don't float to the top
+    if "ORDER BY" in query.upper() and "DESC" in query.upper():
+        import re
+        query = re.sub(
+            r'(ORDER BY\s+.+?\s+DESC)(?!\s+NULLS)',
+            r'\1 NULLS LAST',
+            query,
+            flags=re.IGNORECASE
+        )
+
     return query
