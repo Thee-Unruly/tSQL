@@ -45,7 +45,8 @@ def get_tables(db: str = Query(..., description="Database key")):
     try:
         schema = get_schema(db)
         print(f"[DEBUG] Schema for {db}: {schema}")
-        return {"tables": schema}
+        # schema is already {schema: {table: [columns...]}}
+        return {"schemas": schema}
     except Exception as e:
         import traceback
         print(f"[ERROR] Exception in /tables: {e}")
