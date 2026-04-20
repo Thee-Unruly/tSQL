@@ -1,3 +1,29 @@
+.schema-dropdown-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.schema-select {
+  flex: 1;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid #C8C5BC;
+  border-radius: 8px;
+  color: #1a1a1a;
+  font-size: 0.82rem;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s;
+  font-family: inherit;
+}
+
+.schema-select:hover,
+.schema-select:focus {
+  border-color: #9a9488;
+  background: rgba(255, 255, 255, 0.5);
+}
 /* ===== Reset ===== */
 *,
 *::before,
