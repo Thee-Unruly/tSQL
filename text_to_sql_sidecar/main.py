@@ -84,7 +84,7 @@ def post_query(req: QueryRequest):
             schema_str = "\n".join(schema_lines)
             reasoning, sql = generate_sql_with_reasoning(schema_str, req.question)
             print(f"[DEBUG] Reasoning: {reasoning}")
-        validated_sql = validate_sql(sql, req.db_key)
+        validated_sql = validate_sql(sql, req.db_key, req.schema)
         results = execute_query(req.db_key, validated_sql)
         response = {"sql": validated_sql, "results": results}
         if reasoning:

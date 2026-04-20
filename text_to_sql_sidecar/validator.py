@@ -11,7 +11,7 @@ def set_allowed_tables(allowed: Dict[str, Set[str]]):
     # allowed: {db_key: {schema.table, ...}}
     ALLOWED_TABLES = allowed
 
-def validate_sql(query: str, db_key: str) -> str:
+def validate_sql(query: str, db_key: str, schema: str = None) -> str:
     try:
         parsed = sqlglot.parse_one(query, dialect='postgres')
     except Exception as e:
@@ -26,6 +26,8 @@ def validate_sql(query: str, db_key: str) -> str:
     for t in parsed.find_all(exp.Table):
         if t.db:  # schema-qualified
             used_tables.add(f"{t.db.lower()}.{t.name.lower()}")
+        elif schema and schema != 'All':
+            used_tables.add(f"{schema.lower()}.{t.name.lower()}")
         else:
             used_tables.add(t.name.lower())
     allowed = ALLOWED_TABLES.get(db_key, set())

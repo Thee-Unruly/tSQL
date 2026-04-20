@@ -143,13 +143,14 @@ export default function App() {
       </aside>
 
       <main className="main">
-        <div style={{ margin: '8px 0', fontSize: '0.95rem', color: '#888' }}>
-          {loading || timer > 0 ? (
-            <span>
-              Generation time: {Math.floor(timer / 60)}:{(timer % 60).toString().padStart(2, '0')} {timer < 60 ? 'seconds' : 'minutes'}
+        <div style={{ margin: '8px 0', fontSize: '0.7rem', color: '#888', minHeight: 18 }}>
+          {loading && (
+            <span style={{ fontSize: '0.7rem', letterSpacing: '0.01em' }}>
+              {Math.floor(timer / 60)}:{(timer % 60).toString().padStart(2, '0')}
             </span>
-          ) : null}
+          )}
         </div>
+
         <div className="main-header">
           <span className="main-header-breadcrumb">Text-to-SQL //</span>
           <span className="main-header-title">
@@ -181,7 +182,14 @@ export default function App() {
                   <div className="message-content">
                     {msg.role === 'user' && <p className="user-text">{msg.text}</p>}
                     {msg.role === 'assistant' && (
-                      <ResultsTable result={msg.result ?? null} error={msg.error ?? null} />
+                      <>
+                        <ResultsTable result={msg.result ?? null} error={msg.error ?? null} />
+                        {i === messages.length - 1 && !loading && timer > 0 && (
+                          <div style={{ fontStyle: 'italic', fontSize: '0.95em', marginTop: 4, color: '#888' }}>
+                            Query generated in {timer} second{timer !== 1 ? 's' : ''}.
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
