@@ -3,6 +3,52 @@ import sqlglot.expressions as exp
 from typing import Set, Dict
 
 
+def qualify_sql_tables(sql: str, db_key: str, schema: str = None) -> str:
+    """
+    Rewrite unqualified table names in SQL to schema-qualified names using schema cache.
+    Only applies when schema is 'All' or not specified.
+    """
+    from text_to_sql_sidecar.schema_cache import get_schema
+    try:
+        parsed = sqlglot.parse_one(sql, dialect='postgres')
+        schema_dict = get_schema(db_key)
+    except Exception as e:
+        print(f"[DEBUG] qualify_sql_tables error: {e}")
+        return sql
+    
+    # Build a mapping: table_name -> schema_name (first match)
+    table_to_schema = {}
+    for schema_name, tables in schema_dict.items():
+        for table_name in tables.keys():
+            if table_name.lower() not in table_to_schema:
+                table_to_schema[table_name.lower()] = schema_name
+    
+    print(f"[DEBUG] qualify_sql_tables: schema param={schema}, table_to_schema={table_to_schema}")
+    
+    changed = False
+    for t in parsed.find_all(exp.Table):
+        # Get the table name as a string
+        table_name_str = t.name if isinstance(t.name, str) else str(t.name)
+        table_name_lower = table_name_str.lower()
+        
+        # Check if table is unqualified and should be qualified
+        if not t.db and (schema == 'All' or schema is None):
+            if table_name_lower in table_to_schema:
+                schema_name = table_to_schema[table_name_lower]
+                # Set the db (schema) property
+                t.set('db', schema_name)
+                changed = True
+                print(f"[DEBUG] qualify_sql_tables: qualified {table_name_lower} -> {schema_name}.{table_name_lower}")
+    
+    if changed:
+        qualified = parsed.sql(dialect='postgres')
+        print(f"[DEBUG] qualify_sql_tables output: {qualified}")
+        return qualified
+    
+    print(f"[DEBUG] qualify_sql_tables: no changes needed")
+    return sql
+
+
 # ALLOWED_TABLES: {db_key: set of allowed schema.table names}
 ALLOWED_TABLES: Dict[str, Set[str]] = {}
 
@@ -12,8 +58,10 @@ def set_allowed_tables(allowed: Dict[str, Set[str]]):
     ALLOWED_TABLES = allowed
 
 def validate_sql(query: str, db_key: str, schema: str = None) -> str:
+    # Rewrite SQL to qualify unqualified table names if needed
+    qualified_query = qualify_sql_tables(query, db_key, schema)
     try:
-        parsed = sqlglot.parse_one(query, dialect='postgres')
+        parsed = sqlglot.parse_one(qualified_query, dialect='postgres')
     except Exception as e:
         raise ValueError(f"SQL parse failed: {e}")
 
@@ -21,45 +69,31 @@ def validate_sql(query: str, db_key: str, schema: str = None) -> str:
         if isinstance(node, (exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create)):
             raise ValueError(f"Forbidden operation: {type(node).__name__}")
 
-    # Support schema-qualified table names and resolve unqualified names when schema is 'All'
+    # Support schema-qualified table names only now (all unqualified should be rewritten)
     used_tables = set()
-    unqualified_tables = set()
     for t in parsed.find_all(exp.Table):
-        if t.db:  # schema-qualified
+        if t.db:
             used_tables.add(f"{t.db.lower()}.{t.name.lower()}")
         elif schema and schema != 'All':
             used_tables.add(f"{schema.lower()}.{t.name.lower()}")
         else:
-            # Unqualified table name, need to resolve across all schemas
-            unqualified_tables.add(t.name.lower())
-
+            used_tables.add(t.name.lower())
     allowed = ALLOWED_TABLES.get(db_key, set())
-
-    # If schema is 'All', try to resolve unqualified tables to a schema
-    if schema == 'All' or not schema:
-        for tbl in unqualified_tables:
-            # Find a matching schema.table in allowed
-            matches = [at for at in allowed if at.endswith(f'.{tbl}')]
-            if matches:
-                used_tables.add(matches[0])  # Use the first match
-            else:
-                used_tables.add(tbl)  # Will be blocked below
-
     blocked = used_tables - allowed
     if blocked:
         raise ValueError(f"Unauthorized tables: {blocked}")
 
     if not parsed.find(exp.Limit):
-        query = query.rstrip(';') + " LIMIT 100"
+        qualified_query = qualified_query.rstrip(';') + " LIMIT 100"
 
     # Add NULLS LAST to all DESC order expressions so NULLs/empty values don't float to the top
-    if "ORDER BY" in query.upper() and "DESC" in query.upper():
+    if "ORDER BY" in qualified_query.upper() and "DESC" in qualified_query.upper():
         import re
-        query = re.sub(
+        qualified_query = re.sub(
             r'(ORDER BY\s+.+?\s+DESC)(?!\s+NULLS)',
             r'\1 NULLS LAST',
-            query,
+            qualified_query,
             flags=re.IGNORECASE
         )
 
-    return query
+    return qualified_query
