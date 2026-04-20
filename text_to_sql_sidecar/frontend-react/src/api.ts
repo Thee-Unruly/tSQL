@@ -4,8 +4,12 @@ export interface Database {
     [key: string]: string;
 }
 
+
+// New Schema type: { [schema: string]: { [table: string]: string[] } }
 export interface Schema {
-    [table: string]: string[];
+    [schema: string]: {
+        [table: string]: string[];
+    };
 }
 
 export interface QueryResult {
@@ -24,7 +28,8 @@ export const fetchTables = async (db: string): Promise<Schema> => {
     const res = await fetch(`${API_URL}/tables?db=${encodeURIComponent(db)}`);
     if (!res.ok) throw new Error("Failed to fetch tables");
     const data = await res.json();
-    return data.tables;
+    // The backend now returns { schemas: { ... } }
+    return data.schemas;
 };
 
 export const submitQuery = async (db_key: string, question: string): Promise<QueryResult> => {
