@@ -2,12 +2,15 @@
 
 A secure, multi-database, AI-powered text-to-SQL API and UI for Apache Superset and beyond.
 
+
 ## Features
 - Connects to multiple databases (Postgres, MySQL, BigQuery, etc.)
 - Secure SQL validation (read-only, table whitelist, enforced LIMIT)
 - Schema reflection and caching per database
 - FastAPI backend with REST endpoints
-- Streamlit frontend for rapid prototyping
+- React frontend for production (with schema explorer)
+- Hybrid schema selection: choose a specific schema or "All" for broad search
+- Query timer: see how long each query takes to generate and retrieve
 - Ready for LLM integration (Ollama, SQLCoder, etc.)
 
 ## Project Structure
@@ -44,10 +47,20 @@ text-to-sql-sidecar/
 5. **Open the UI:**
    - Go to `http://localhost:8501` in your browser.
 
+
 ## API Endpoints
 - `GET  /databases` — List all registered databases
 - `GET  /tables?db=...` — List tables/columns for a database
-- `POST /query` — Validate and execute a query (body: `{db_key, question}`)
+- `POST /query` — Generate and execute a query (body: `{db_key, question, schema?}`)
+   - Optional `schema` parameter: If provided, only that schema is used for prompt generation. If omitted or set to "All", all schemas are considered (with relevance filtering).
+
+
+## UI Usage
+- **Schema Explorer:** Use the dropdown to select a schema or "All". Only table names are shown for clarity.
+- **Hybrid Search:**
+   - If a schema is selected, only that schema is used for prompt generation (faster, more focused).
+   - If "All" is selected, the system searches across all schemas (slower, but comprehensive).
+- **Query Timer:** The UI displays the time taken for each query, helping you evaluate retrieval speed.
 
 ## Security
 - Only allows SELECT queries
