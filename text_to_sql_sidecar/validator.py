@@ -2,10 +2,13 @@ import sqlglot
 import sqlglot.expressions as exp
 from typing import Set, Dict
 
+
+# ALLOWED_TABLES: {db_key: set of allowed schema.table names}
 ALLOWED_TABLES: Dict[str, Set[str]] = {}
 
 def set_allowed_tables(allowed: Dict[str, Set[str]]):
     global ALLOWED_TABLES
+    # allowed: {db_key: {schema.table, ...}}
     ALLOWED_TABLES = allowed
 
 def validate_sql(query: str, db_key: str) -> str:
@@ -18,7 +21,13 @@ def validate_sql(query: str, db_key: str) -> str:
         if isinstance(node, (exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create)):
             raise ValueError(f"Forbidden operation: {type(node).__name__}")
 
-    used_tables = {t.name.lower() for t in parsed.find_all(exp.Table)}
+    # Support schema-qualified table names
+    used_tables = set()
+    for t in parsed.find_all(exp.Table):
+        if t.db:  # schema-qualified
+            used_tables.add(f"{t.db.lower()}.{t.name.lower()}")
+        else:
+            used_tables.add(t.name.lower())
     allowed = ALLOWED_TABLES.get(db_key, set())
     blocked = used_tables - allowed
     if blocked:

@@ -20,12 +20,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load allowed tables from actual database schemas
+
+# Load allowed tables from actual database schemas (schema.table format)
 allowed_tables = {}
 for db_key in list_databases().keys():
     try:
-        schema = get_schema(db_key)
-        allowed_tables[db_key] = set(schema.keys())
+        schema = get_schema(db_key)  # {schema: {table: [...]}}
+        allowed = set()
+        for schema_name, tables in schema.items():
+            for table_name in tables.keys():
+                allowed.add(f"{schema_name.lower()}.{table_name.lower()}")
+        allowed_tables[db_key] = allowed
     except Exception as e:
         print(f"[WARN] Could not load schema for {db_key}: {e}")
 
