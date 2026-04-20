@@ -46,3 +46,53 @@ export const submitQuery = async (db_key: string, question: string, schema?: str
     }
     return res.json();
 };
+
+export const submitQueryStream = async (
+    db_key: string,
+    question: string,
+    onEvent: (type: string, data: unknown) => void,
+    schema?: string
+): Promise<void> => {
+    const body: any = { db_key, question };
+    if (schema && schema !== 'All') body.schema = schema;
+
+    const res = await fetch(`${API_URL}/query-stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Query failed");
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("No response body");
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+
+        // Keep the last incomplete line in the buffer
+        buffer = lines[lines.length - 1];
+
+        for (let i = 0; i < lines.length - 1; i++) {
+            const line = lines[i];
+            if (line.startsWith("data: ")) {
+                try {
+                    const event = JSON.parse(line.slice(6));
+                    onEvent(event.type, event.content || event);
+                } catch (e) {
+                    console.error("Failed to parse event:", line, e);
+                }
+            }
+        }
+    }
+};

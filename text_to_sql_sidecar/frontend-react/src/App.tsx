@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { fetchDatabases, fetchTables, submitQuery } from './api';
+import { fetchDatabases, fetchTables, submitQuery, submitQueryStream } from './api';
 import type { Schema, QueryResult } from './api';
 import SchemaPanel from './components/SchemaPanel';
 import ResultsTable from './components/ResultsTable';
@@ -9,6 +9,7 @@ interface Message {
   text?: string;
   result?: QueryResult;
   error?: string;
+  reasoning?: string;
 }
 
 export default function App() {
@@ -75,9 +76,57 @@ export default function App() {
     setLoading(true);
     setTimer(0);
     setTimerActive(true);
+
     try {
-      const res = await submitQuery(selectedDb, question, selectedSchema);
-      setMessages((prev) => [...prev, { role: 'assistant', result: res }]);
+      // Add initial assistant message for streaming
+      const assistantMsgIndex = messages.length + 1;
+      setMessages((prev) => [...prev, { role: 'assistant', reasoning: '', result: undefined }]);
+
+      await submitQueryStream(selectedDb, question, (eventType, data) => {
+        if (eventType === 'reasoning_chunk') {
+          // Stream reasoning chunks
+          setMessages((prev) => {
+            const newMessages = [...prev];
+            const lastMsg = newMessages[newMessages.length - 1];
+            if (lastMsg?.role === 'assistant') {
+              lastMsg.reasoning = (lastMsg.reasoning || '') + (data as string);
+            }
+            return newMessages;
+          });
+        } else if (eventType === 'reasoning_complete') {
+          // Reasoning complete
+          setMessages((prev) => {
+            const newMessages = [...prev];
+            const lastMsg = newMessages[newMessages.length - 1];
+            if (lastMsg?.role === 'assistant') {
+              lastMsg.reasoning = data as string;
+            }
+            return newMessages;
+          });
+        } else if (eventType === 'results') {
+          // Results arrived
+          const result = data as { sql: string; results: Record<string, unknown>[] };
+          setMessages((prev) => {
+            const newMessages = [...prev];
+            const lastMsg = newMessages[newMessages.length - 1];
+            if (lastMsg?.role === 'assistant') {
+              lastMsg.result = { sql: result.sql, results: result.results };
+            }
+            return newMessages;
+          });
+        } else if (eventType === 'error') {
+          // Error occurred
+          setMessages((prev) => {
+            const newMessages = [...prev];
+            const lastMsg = newMessages[newMessages.length - 1];
+            if (lastMsg?.role === 'assistant') {
+              lastMsg.error = data as string;
+              delete lastMsg.result;
+            }
+            return newMessages;
+          });
+        }
+      }, selectedSchema);
     } catch (e: unknown) {
       setMessages((prev) => [
         ...prev,
@@ -183,6 +232,11 @@ export default function App() {
                     {msg.role === 'user' && <p className="user-text">{msg.text}</p>}
                     {msg.role === 'assistant' && (
                       <>
+                        {msg.reasoning && (
+                          <div style={{ fontStyle: 'italic', fontSize: '0.9em', marginBottom: 12, padding: '8px', backgroundColor: '#f5f5f5', borderRadius: '4px', color: '#555' }}>
+                            <strong>Reasoning:</strong> {msg.reasoning}
+                          </div>
+                        )}
                         <ResultsTable result={msg.result ?? null} error={msg.error ?? null} />
                         {i === messages.length - 1 && !loading && timer > 0 && (
                           <div style={{ fontStyle: 'italic', fontSize: '0.95em', marginTop: 4, color: '#888' }}>

@@ -1,6 +1,7 @@
 import os
 import requests
-from typing import Tuple
+from typing import Tuple, Generator
+import json
 
 LITELLM_API_URL = os.getenv("LITELLM_API_URL", "http://localhost:7072/v1/chat/completions")
 LITELLM_API_KEY = os.getenv("LITELLM_API_KEY", "sk-A2PqYnyEcNmuRSMQerWgiDIs")
@@ -102,3 +103,84 @@ def generate_sql(schema: str, question: str, model: str = "gemma2-9b") -> str:
     """Backward compatible wrapper that returns only SQL"""
     _, sql = generate_sql_with_reasoning(schema, question, model)
     return sql
+
+def generate_sql_with_reasoning_streaming(schema: str, question: str, model: str = "gemma2-9b") -> Generator[Tuple[str, str], None, None]:
+    """
+    Generate SQL with reasoning step using streaming.
+    Yields (event_type, data) tuples as the LLM responds.
+    event_type can be: "reasoning_chunk", "reasoning_complete", "sql", "error"
+    """
+    prompt = build_prompt(schema, question)
+    headers = {
+        "Authorization": f"Bearer {LITELLM_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant that writes SQL queries. Think through the problem carefully."},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 1024,
+        "temperature": 0.0,
+        "stream": True
+    }
+    
+    try:
+        resp = requests.post(LITELLM_API_URL, headers=headers, json=payload, stream=True)
+        resp.raise_for_status()
+        
+        full_content = ""
+        reasoning = ""
+        sql = ""
+        
+        # Stream the response chunks
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            
+            line = line.decode('utf-8') if isinstance(line, bytes) else line
+            if line.startswith('data: '):
+                line = line[6:]
+            
+            if line.strip() == '[DONE]':
+                break
+            
+            try:
+                chunk_data = json.loads(line)
+                delta = chunk_data.get('choices', [{}])[0].get('delta', {})
+                content = delta.get('content', '')
+                
+                if content:
+                    full_content += content
+                    # Stream reasoning chunks as they arrive
+                    if "REASONING:" in full_content and "SQL:" not in full_content:
+                        yield ("reasoning_chunk", content)
+            except json.JSONDecodeError:
+                continue
+        
+        # Parse final content
+        if "REASONING:" in full_content and "SQL:" in full_content:
+            parts = full_content.split("SQL:")
+            reasoning = parts[0].replace("REASONING:", "").strip()
+            sql_part = parts[1].strip() if len(parts) > 1 else ""
+            
+            # Clean SQL
+            if "```" in sql_part:
+                lines = sql_part.split("\n")
+                lines = [l for l in lines if not l.strip().startswith("```")]
+                sql = "\n".join(lines).strip()
+            else:
+                sql = sql_part
+            
+            sql = sql.replace("`", "")
+        else:
+            sql = full_content
+            reasoning = "No explicit reasoning provided"
+        
+        # Yield completion markers
+        yield ("reasoning_complete", reasoning)
+        yield ("sql", sql)
+        
+    except Exception as e:
+        yield ("error", str(e))
