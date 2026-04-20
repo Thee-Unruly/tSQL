@@ -20,6 +20,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
   const [schemaOpen, setSchemaOpen] = useState(false);
+  const [selectedSchema, setSelectedSchema] = useState<string>('All');
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -37,6 +38,7 @@ export default function App() {
     if (!selectedDb) return;
     setSchema({});
     setMessages([]);
+    setSelectedSchema('All');
     fetchTables(selectedDb).then(setSchema).catch(() => { });
   }, [selectedDb]);
 
@@ -52,7 +54,7 @@ export default function App() {
     setMessages((prev) => [...prev, { role: 'user', text: question }]);
     setLoading(true);
     try {
-      const res = await submitQuery(selectedDb, question);
+      const res = await submitQuery(selectedDb, question, selectedSchema);
       setMessages((prev) => [...prev, { role: 'assistant', result: res }]);
     } catch (e: unknown) {
       setMessages((prev) => [
@@ -107,7 +109,13 @@ export default function App() {
             <span>Schema Explorer</span>
             <span className="toggle-arrow">{schemaOpen ? '▲' : '▼'}</span>
           </button>
-          {schemaOpen && <SchemaPanel schema={schema} />}
+          {schemaOpen && (
+            <SchemaPanel
+              schema={schema}
+              selectedSchema={selectedSchema}
+              setSelectedSchema={setSelectedSchema}
+            />
+          )}
         </div>
       </aside>
 

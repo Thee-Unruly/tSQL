@@ -40,6 +40,7 @@ class QueryRequest(BaseModel):
     db_key: str
     question: str
     sql: str = None
+    schema: str = None
 
 @app.get("/databases")
 def get_databases():
@@ -67,7 +68,12 @@ def post_query(req: QueryRequest):
         else:
             schema = get_schema(req.db_key)
             schema_types = get_schema_with_types(req.db_key)
-            filtered_schema = filter_schema_by_relevance(req.question, schema)
+            # Hybrid logic: if schema param is provided and not 'All', use only that schema
+            if req.schema and req.schema != 'All' and req.schema in schema:
+                filtered_schema = {req.schema: schema[req.schema]}
+            else:
+                # Use all schemas, but filter by relevance to the question
+                filtered_schema = filter_schema_by_relevance(req.question, schema)
             # Build schema string with schema and table names for LLM
             schema_lines = []
             for schema_name, tables in filtered_schema.items():

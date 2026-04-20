@@ -32,11 +32,13 @@ export const fetchTables = async (db: string): Promise<Schema> => {
     return data.schemas;
 };
 
-export const submitQuery = async (db_key: string, question: string): Promise<QueryResult> => {
+export const submitQuery = async (db_key: string, question: string, schema?: string): Promise<QueryResult> => {
+    const body: any = { db_key, question };
+    if (schema && schema !== 'All') body.schema = schema;
     const res = await fetch(`${API_URL}/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ db_key, question }),
+        body: JSON.stringify(body),
     });
     if (!res.ok) {
         const err = await res.json();
