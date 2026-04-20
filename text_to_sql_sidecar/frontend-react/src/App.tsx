@@ -21,8 +21,28 @@ export default function App() {
   const [dbError, setDbError] = useState<string | null>(null);
   const [schemaOpen, setSchemaOpen] = useState(false);
   const [selectedSchema, setSelectedSchema] = useState<string>('All');
+  const [timer, setTimer] = useState<number>(0);
+  const [timerActive, setTimerActive] = useState<boolean>(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Timer effect
+  useEffect(() => {
+    if (timerActive) {
+      timerRef.current = setInterval(() => {
+        setTimer((t) => t + 1);
+      }, 1000);
+    } else if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [timerActive]);
 
   useEffect(() => {
     fetchDatabases()
@@ -53,6 +73,8 @@ export default function App() {
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setMessages((prev) => [...prev, { role: 'user', text: question }]);
     setLoading(true);
+    setTimer(0);
+    setTimerActive(true);
     try {
       const res = await submitQuery(selectedDb, question, selectedSchema);
       setMessages((prev) => [...prev, { role: 'assistant', result: res }]);
@@ -63,6 +85,7 @@ export default function App() {
       ]);
     } finally {
       setLoading(false);
+      setTimerActive(false);
     }
   };
 
@@ -120,6 +143,13 @@ export default function App() {
       </aside>
 
       <main className="main">
+        <div style={{ margin: '8px 0', fontSize: '0.95rem', color: '#888' }}>
+          {loading || timer > 0 ? (
+            <span>
+              Generation time: {Math.floor(timer / 60)}:{(timer % 60).toString().padStart(2, '0')} {timer < 60 ? 'seconds' : 'minutes'}
+            </span>
+          ) : null}
+        </div>
         <div className="main-header">
           <span className="main-header-breadcrumb">Text-to-SQL //</span>
           <span className="main-header-title">
