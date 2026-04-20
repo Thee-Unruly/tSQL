@@ -14,28 +14,36 @@ Schema:
 Question:
 {question}
 
-CRITICAL SQL RULES:
-1. For "top N by column" queries: SELECT * FROM table ORDER BY column DESC NULLS LAST LIMIT N
-2. If a column type is TEXT or VARCHAR but contains numbers, use CAST: ORDER BY CAST(column AS numeric) DESC NULLS LAST
-3. Do NOT use aggregate functions (SUM, COUNT, AVG) unless the question says "total", "count", "average", "sum"
-4. Do NOT invent columns that don't exist in the schema
-5. Column types are shown in parentheses — use them to decide when to CAST
-6. Always validate that columns exist in the schema before using them
+POSTGRES SQL RULES:
+1. Use schema.table notation for all unqualified table names
+2. For COUNT/SUM/AVG/MIN/MAX: explicitly use aggregate functions
+3. For TOP N / ranking: ORDER BY column DESC/ASC LIMIT N
+4. For filtering: use WHERE clauses with proper column types
+5. For numeric columns in TEXT: use CAST(column AS numeric)
+6. For NULLs in ORDER BY: use NULLS LAST (DESC) or NULLS FIRST (ASC)
+7. Always validate columns exist in schema before using them
+8. JOIN tables only if multiple tables are needed
 
-SAFE PATTERN FOR "TOP N":
-- Question: "What top 10 products in ratings?"
-- Answer: SELECT * FROM sales_ ORDER BY rating DESC LIMIT 10;
+QUERY PATTERN EXAMPLES:
+- COUNT: "how many X" → SELECT COUNT(*) FROM table
+- AGGREGATE: "total/sum/average of X" → SELECT SUM(column) FROM table GROUP BY ...
+- TOP N: "top 10 X by Y" → SELECT * FROM table ORDER BY column DESC LIMIT 10
+- FILTER: "X where Y = Z" → SELECT * FROM table WHERE condition
+- RELATIONSHIP: "X and Y together" → SELECT ... FROM table1 JOIN table2 ON ...
 
-Follow these steps:
-1. REASONING: Is this a "top N" query? If yes, just ORDER BY DESC LIMIT N. If it needs aggregation, be explicit.
-2. SQL: Write the simplest valid query that answers the question.
+REASONING INSTRUCTIONS:
+Analyze the question and explain your approach. Include:
+1. What tables/columns you're using and WHY
+2. What type of query this is (COUNT, filter, aggregation, ranking, JOIN, etc.)
+3. Any transformations or conditions needed
+4. Key assumptions you made
 
-Format:
+Format your response exactly as:
 REASONING:
-[One sentence: what columns to use and why]
+[2-3 sentences explaining your approach and why]
 
 SQL:
-[Single SQL statement only]
+[Single valid PostgreSQL statement]
 """
 
 def build_prompt(schema: str, question: str) -> str:
