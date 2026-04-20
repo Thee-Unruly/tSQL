@@ -39,7 +39,10 @@ export default function SchemaPanel({ schema }: Props) {
                     Object.keys(schema[selectedSchema]).length > 0 ? (
                         Object.keys(schema[selectedSchema]).map(table => (
                             <div key={table} className="table-card">
-                                <div className="table-name">📁 {table}</div>
+                                <div className="table-name">
+                                    <img src="/table-icon.svg" alt="table icon" style={{ width: 18, height: 18, verticalAlign: 'middle', marginRight: 6 }} />
+                                    {table}
+                                </div>
                             </div>
                         ))
                     ) : (
