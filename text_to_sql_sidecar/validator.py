@@ -21,16 +21,30 @@ def validate_sql(query: str, db_key: str, schema: str = None) -> str:
         if isinstance(node, (exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create)):
             raise ValueError(f"Forbidden operation: {type(node).__name__}")
 
-    # Support schema-qualified table names
+    # Support schema-qualified table names and resolve unqualified names when schema is 'All'
     used_tables = set()
+    unqualified_tables = set()
     for t in parsed.find_all(exp.Table):
         if t.db:  # schema-qualified
             used_tables.add(f"{t.db.lower()}.{t.name.lower()}")
         elif schema and schema != 'All':
             used_tables.add(f"{schema.lower()}.{t.name.lower()}")
         else:
-            used_tables.add(t.name.lower())
+            # Unqualified table name, need to resolve across all schemas
+            unqualified_tables.add(t.name.lower())
+
     allowed = ALLOWED_TABLES.get(db_key, set())
+
+    # If schema is 'All', try to resolve unqualified tables to a schema
+    if schema == 'All' or not schema:
+        for tbl in unqualified_tables:
+            # Find a matching schema.table in allowed
+            matches = [at for at in allowed if at.endswith(f'.{tbl}')]
+            if matches:
+                used_tables.add(matches[0])  # Use the first match
+            else:
+                used_tables.add(tbl)  # Will be blocked below
+
     blocked = used_tables - allowed
     if blocked:
         raise ValueError(f"Unauthorized tables: {blocked}")
