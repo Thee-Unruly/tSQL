@@ -6,7 +6,7 @@ from typing import Set, Dict
 def qualify_sql_tables(sql: str, db_key: str, schema: str = None) -> str:
     """
     Rewrite unqualified table names in SQL to schema-qualified names using schema cache.
-    Only applies when schema is 'All' or not specified.
+    Applies when schema is 'All', a specific schema name, or not specified.
     """
     from text_to_sql_sidecar.schema_cache import get_schema
     try:
@@ -23,7 +23,7 @@ def qualify_sql_tables(sql: str, db_key: str, schema: str = None) -> str:
             if table_name.lower() not in table_to_schema:
                 table_to_schema[table_name.lower()] = schema_name
     
-    print(f"[DEBUG] qualify_sql_tables: schema param={schema}, table_to_schema={table_to_schema}")
+    print(f"[DEBUG] qualify_sql_tables: schema param={schema}, table_to_schema keys={list(table_to_schema.keys())[:5]}...")
     
     changed = False
     for t in parsed.find_all(exp.Table):
@@ -32,13 +32,19 @@ def qualify_sql_tables(sql: str, db_key: str, schema: str = None) -> str:
         table_name_lower = table_name_str.lower()
         
         # Check if table is unqualified and should be qualified
-        if not t.db and (schema == 'All' or schema is None):
-            if table_name_lower in table_to_schema:
-                schema_name = table_to_schema[table_name_lower]
-                # Set the db (schema) property
-                t.set('db', schema_name)
+        if not t.db:
+            if schema and schema != 'All':
+                # Specific schema selected: qualify with that schema
+                t.set('db', schema)
                 changed = True
-                print(f"[DEBUG] qualify_sql_tables: qualified {table_name_lower} -> {schema_name}.{table_name_lower}")
+                print(f"[DEBUG] qualify_sql_tables: qualified {table_name_lower} -> {schema}.{table_name_lower} (specific schema)")
+            elif schema == 'All' or schema is None:
+                # All schemas or no schema: look up table in cache
+                if table_name_lower in table_to_schema:
+                    schema_name = table_to_schema[table_name_lower]
+                    t.set('db', schema_name)
+                    changed = True
+                    print(f"[DEBUG] qualify_sql_tables: qualified {table_name_lower} -> {schema_name}.{table_name_lower} (from cache)")
     
     if changed:
         qualified = parsed.sql(dialect='postgres')
