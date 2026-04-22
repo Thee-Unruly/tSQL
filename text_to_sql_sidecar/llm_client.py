@@ -206,7 +206,11 @@ GENERAL RULES:
 1. Always validate columns exist in the schema before using them — never invent column names
 2. JOIN tables only if multiple tables are needed
 3. For COUNT/SUM/AVG/MIN/MAX: explicitly use aggregate functions
-4. When using GROUP BY, only select columns that are in the GROUP BY clause or inside an aggregate function
+4. When using GROUP BY, only select columns that are in the GROUP BY clause or inside an aggregate function.
+    IMPORTANT: Do NOT add a column to GROUP BY just because you used CAST() on it in WHERE.
+    Filtering with CAST(rating_count AS INTEGER) >= 5 in WHERE does NOT mean rating_count belongs in GROUP BY.
+    Wrong:  GROUP BY category, product_name, rating_count
+    Right:  GROUP BY category, product_name
 5. For TEXT columns storing numeric values, ALWAYS cast before ANY comparison or arithmetic.
     NEVER write: WHERE rating_count >= 5
     ALWAYS write: WHERE CAST(rating_count AS INTEGER) >= 5

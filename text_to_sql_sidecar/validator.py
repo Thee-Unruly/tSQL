@@ -11,15 +11,6 @@ _DIALECT_MAP = {
     "oracle":     "oracle",
 }
 
-# Maps dialect to the sqlglot Limit expression style
-_LIMIT_STYLE = {
-    "postgres": "postgres",
-    "mysql":    "mysql",
-    "sqlite":   "sqlite",
-    "tsql":     "tsql",   # uses TOP N, sqlglot handles this
-    "oracle":   "oracle", # uses FETCH FIRST, sqlglot handles this
-}
-
 
 def _get_sqlglot_dialect(db_key: str) -> str:
     from text_to_sql_sidecar.schema_cache import get_engine_dialect
@@ -45,7 +36,12 @@ def _get_derived_table_aliases(parsed: exp.Expression) -> set:
     return aliases
 
 
-def _collect_used_tables(parsed: exp.Expression, schema: Optional[str], cte_names: set, derived_aliases: set) -> set:
+def _collect_used_tables(
+    parsed: exp.Expression,
+    schema: Optional[str],
+    cte_names: set,
+    derived_aliases: set
+) -> set:
     """
     Collect all real table references from the parsed SQL.
     Excludes CTEs and derived table aliases.
@@ -56,7 +52,6 @@ def _collect_used_tables(parsed: exp.Expression, schema: Optional[str], cte_name
         table_name = t.name if isinstance(t.name, str) else str(t.name)
         table_name_lower = table_name.lower()
 
-        # Skip CTEs and derived tables — they are not real DB tables
         if table_name_lower in cte_names or table_name_lower in derived_aliases:
             continue
 
@@ -68,6 +63,63 @@ def _collect_used_tables(parsed: exp.Expression, schema: Optional[str], cte_name
             used_tables.add(table_name_lower)
 
     return used_tables
+
+
+def fix_common_sql_errors(parsed: exp.Expression, sqlglot_dialect: str) -> exp.Expression:
+    """
+    Automatically repair known LLM SQL generation mistakes before validation.
+
+    Fixes applied:
+    1. Remove SELECT expressions that are not aggregated and not in GROUP BY.
+       e.g. LLM adds CAST(rating_count AS INT) AS rating_count to SELECT
+            but does not add rating_count to GROUP BY — PostgreSQL rejects this.
+    2. More fixes can be added here as new patterns are identified.
+    """
+    for select in parsed.find_all(exp.Select):
+        group_by = select.args.get("group")
+        if not group_by:
+            continue
+
+        # Build set of column names that are explicitly in GROUP BY
+        grouped_cols = set()
+        for g in group_by.expressions:
+            if isinstance(g, exp.Column):
+                grouped_cols.add(g.name.lower())
+            elif isinstance(g, exp.Cast):
+                # Handle CAST(col AS type) in GROUP BY
+                col = g.find(exp.Column)
+                if col:
+                    grouped_cols.add(col.name.lower())
+
+        # Find SELECT expressions that are non-aggregated columns not in GROUP BY
+        to_remove = []
+        for expr in select.expressions:
+            # Only inspect aliased expressions (e.g. CAST(...) AS rating_count)
+            if not isinstance(expr, exp.Alias):
+                continue
+
+            inner = expr.this
+
+            # Check if the inner expression is a non-aggregated column or CAST of a column
+            if isinstance(inner, (exp.Column, exp.Cast)):
+                # Make sure it's not wrapped in an aggregate function
+                is_aggregated = any(
+                    isinstance(inner, agg)
+                    for agg in (exp.Sum, exp.Avg, exp.Count, exp.Max, exp.Min)
+                )
+                if is_aggregated:
+                    continue
+
+                # Find the underlying column name
+                col = inner if isinstance(inner, exp.Column) else inner.find(exp.Column)
+                if col and col.name.lower() not in grouped_cols:
+                    to_remove.append(expr)
+                    print(f"[FIX] Removed non-grouped SELECT expression: {expr.sql(dialect=sqlglot_dialect)}")
+
+        for expr in to_remove:
+            select.expressions.remove(expr)
+
+    return parsed
 
 
 def qualify_sql_tables(sql: str, db_key: str, schema: Optional[str] = None) -> str:
@@ -109,7 +161,6 @@ def qualify_sql_tables(sql: str, db_key: str, schema: Optional[str] = None) -> s
         table_name_str = t.name if isinstance(t.name, str) else str(t.name)
         table_name_lower = table_name_str.lower()
 
-        # Don't qualify CTEs or derived table aliases
         if table_name_lower in skip_names:
             continue
 
@@ -147,6 +198,7 @@ def validate_sql(query: str, db_key: str, schema: Optional[str] = None) -> str:
     Validate and rewrite a SQL query:
     - Qualifies unqualified table names
     - Blocks DML/DDL operations
+    - Auto-fixes known LLM generation mistakes
     - Enforces ALLOWED_TABLES whitelist (fail-secure)
     - Adds NULLS LAST to DESC ORDER BY (PostgreSQL only)
     - Appends LIMIT if missing (dialect-aware)
@@ -156,6 +208,7 @@ def validate_sql(query: str, db_key: str, schema: Optional[str] = None) -> str:
     """
     from text_to_sql_sidecar.schema_cache import get_engine_dialect
     sqlglot_dialect = _get_sqlglot_dialect(db_key)
+    sa_dialect = get_engine_dialect(db_key)
 
     # Step 1: Qualify unqualified table names
     qualified_query = qualify_sql_tables(query, db_key, schema)
@@ -171,12 +224,21 @@ def validate_sql(query: str, db_key: str, schema: Optional[str] = None) -> str:
         if isinstance(node, (exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create)):
             raise ValueError(f"Forbidden operation: {type(node).__name__}")
 
-    # Step 4: Collect real table references (exclude CTEs and derived tables)
+    # Step 4: Auto-fix known LLM generation mistakes
+    parsed = fix_common_sql_errors(parsed, sqlglot_dialect)
+    qualified_query = parsed.sql(dialect=sqlglot_dialect)
+    # Re-parse after fixes so subsequent steps work on the corrected tree
+    try:
+        parsed = sqlglot.parse_one(qualified_query, dialect=sqlglot_dialect)
+    except Exception as e:
+        raise ValueError(f"SQL parse failed after auto-fix: {e}")
+
+    # Step 5: Collect real table references (exclude CTEs and derived tables)
     cte_names = _get_cte_names(parsed)
     derived_aliases = _get_derived_table_aliases(parsed)
     used_tables = _collect_used_tables(parsed, schema, cte_names, derived_aliases)
 
-    # Step 5: Enforce ALLOWED_TABLES whitelist (fail-secure)
+    # Step 6: Enforce ALLOWED_TABLES whitelist (fail-secure)
     allowed = ALLOWED_TABLES.get(db_key)
     if allowed is None:
         raise ValueError(
@@ -187,8 +249,7 @@ def validate_sql(query: str, db_key: str, schema: Optional[str] = None) -> str:
     if blocked:
         raise ValueError(f"Unauthorized tables: {blocked}")
 
-    # Step 6: Add NULLS LAST to DESC ORDER BY (PostgreSQL only, via sqlglot)
-    sa_dialect = get_engine_dialect(db_key)
+    # Step 7: Add NULLS LAST to DESC ORDER BY (PostgreSQL only, via sqlglot)
     if sa_dialect == "postgresql":
         nulls_modified = False
         for order in parsed.find_all(exp.Ordered):
@@ -197,16 +258,14 @@ def validate_sql(query: str, db_key: str, schema: Optional[str] = None) -> str:
                 nulls_modified = True
         if nulls_modified:
             qualified_query = parsed.sql(dialect=sqlglot_dialect)
-            # Re-parse after modification so LIMIT check is accurate
             try:
                 parsed = sqlglot.parse_one(qualified_query, dialect=sqlglot_dialect)
             except Exception:
-                pass  # non-critical, proceed with string
+                pass
 
-    # Step 7: Append LIMIT if missing (dialect-aware via sqlglot)
+    # Step 8: Append LIMIT if missing (dialect-aware)
     if not parsed.find(exp.Limit):
         if sa_dialect == "mssql":
-            # MSSQL uses TOP N — inject it into the SELECT
             select = parsed.find(exp.Select)
             if select and not select.args.get("top"):
                 select.set("top", exp.Top(this=exp.Literal.number(100)))
@@ -214,10 +273,8 @@ def validate_sql(query: str, db_key: str, schema: Optional[str] = None) -> str:
             else:
                 qualified_query = qualified_query.rstrip(";") + " LIMIT 100"
         elif sa_dialect == "oracle":
-            # Oracle 12c+ uses FETCH FIRST
             qualified_query = qualified_query.rstrip(";") + " FETCH FIRST 100 ROWS ONLY"
         else:
-            # PostgreSQL, MySQL, SQLite
             qualified_query = qualified_query.rstrip(";") + " LIMIT 100"
 
     return qualified_query
