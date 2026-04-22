@@ -23,23 +23,15 @@ def filter_schema_by_relevance(question: str, schema: Dict[str, Dict[str, List[s
     for schema_name, tables in schema.items():
         relevant_tables = {}
         for table_name, columns in tables.items():
-            # Check if schema or table name matches any keyword
             schema_match = any(kw in schema_name.lower() for kw in keywords)
             table_match = any(kw in table_name.lower() for kw in keywords)
-            # Check if any column matches keywords
             matching_cols = [col for col in columns if any(kw in col.lower() for kw in keywords)]
             if schema_match or table_match or matching_cols:
-                if table_match or schema_match:
-                    relevant_tables[table_name] = columns
-                else:
-                    key_cols = [c for c in columns if 'id' in c.lower() or 'key' in c.lower()]
-                    relevant_tables[table_name] = list(set(matching_cols + key_cols))
+                # FIX: Always include all columns for relevant tables
+                relevant_tables[table_name] = columns
         if relevant_tables:
             relevant_schema[schema_name] = relevant_tables
 
-    print(f"[DEBUG] Filtered schema size: {sum(len(t) for t in relevant_schema.values())} tables (from {sum(len(t) for t in schema.values())})")
+    print(f"[DEBUG] Filtered schema size: {sum(len(t) for t in relevant_schema.values())} tables")
 
-    if not relevant_schema:
-        print(f"[DEBUG] No matches, returning full schema (fallback)")
-        return schema
-    return relevant_schema
+    return relevant_schema if relevant_schema else schema

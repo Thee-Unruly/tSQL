@@ -42,7 +42,7 @@ class QueryRequest(BaseModel):
     db_key: str
     question: str
     sql: str = None
-    schema: str = None
+    schema_name: str = None
 
 @app.get("/databases")
 def get_databases():
@@ -71,8 +71,8 @@ def post_query(req: QueryRequest):
             schema = get_schema(req.db_key)
             schema_types = get_schema_with_types(req.db_key)
             # Hybrid logic: if schema param is provided and not 'All', use only that schema
-            if req.schema and req.schema != 'All' and req.schema in schema:
-                filtered_schema = {req.schema: schema[req.schema]}
+            if req.schema_name and req.schema_name != 'All' and req.schema_name in schema:
+                filtered_schema = {req.schema_name: schema[req.schema_name]}
             else:
                 # Use all schemas, but filter by relevance to the question
                 filtered_schema = filter_schema_by_relevance(req.question, schema)
@@ -86,7 +86,7 @@ def post_query(req: QueryRequest):
             schema_str = "\n".join(schema_lines)
             reasoning, sql = generate_sql_with_reasoning(schema_str, req.question)
             print(f"[DEBUG] Reasoning: {reasoning}")
-        validated_sql = validate_sql(sql, req.db_key, req.schema)
+        validated_sql = validate_sql(sql, req.db_key, req.schema_name)
         results = execute_query(req.db_key, validated_sql)
         response = {"sql": validated_sql, "results": results}
         if reasoning:
@@ -106,8 +106,8 @@ def post_query_stream(req: QueryRequest):
             schema_types = get_schema_with_types(req.db_key)
             
             # Hybrid logic: if schema param is provided and not 'All', use only that schema
-            if req.schema and req.schema != 'All' and req.schema in schema:
-                filtered_schema = {req.schema: schema[req.schema]}
+            if req.schema_name and req.schema_name != 'All' and req.schema_name in schema:
+                filtered_schema = {req.schema_name: schema[req.schema_name]}
             else:
                 # Use all schemas, but filter by relevance to the question
                 filtered_schema = filter_schema_by_relevance(req.question, schema)
@@ -143,7 +143,7 @@ def post_query_stream(req: QueryRequest):
             
             # Validate and execute SQL
             try:
-                validated_sql = validate_sql(sql, req.db_key, req.schema)
+                validated_sql = validate_sql(sql, req.db_key, req.schema_name)
                 results = execute_query(req.db_key, validated_sql)
                 yield f"data: {json.dumps({'type': 'results', 'sql': validated_sql, 'results': results})}\n\n"
             except Exception as e:
