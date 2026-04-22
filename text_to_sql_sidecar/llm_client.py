@@ -1,3 +1,24 @@
+def check_above_average_filter(sql: str, question: str) -> 'Optional[str]':
+    """
+    For 'above average' questions, check that the outer SELECT
+    has a WHERE comparing the two avg columns.
+    Returns an error message if the filter is missing, else None.
+    """
+    question_lower = question.lower()
+    above_average_triggers = ["above average", "above the average", "exceed the average", "higher than average"]
+    if not any(trigger in question_lower for trigger in above_average_triggers):
+        return None  # not an above-average question, skip check
+
+    sql_upper = sql.upper()
+    # Check that a WHERE clause exists after the CTEs
+    # A valid above-average query must filter pa.avg > ca.avg somewhere
+    if "WHERE" not in sql_upper.split("SELECT")[-1]:
+        return (
+            "Your query is missing the WHERE filter that restricts results to above-average items. "
+            "The final SELECT must include: WHERE pa.avg_product_rating > ca.avg_category_rating. "
+            "Without this, ALL products are returned, not just above-average ones."
+        )
+    return None
 import os
 import requests
 from typing import Tuple, Generator
@@ -224,6 +245,12 @@ GENERAL RULES:
    - Then JOIN the CTEs and filter on the comparison
    - See the "compare_to_average" pattern example above for the exact structure
 
+9. For "above/below average" questions, the JOIN of item_avg and group_avg CTEs MUST include
+    a WHERE clause filtering the comparison:
+    WHERE item_avg > group_avg   -- for "above average"
+    WHERE item_avg < group_avg   -- for "below average"
+    Omitting this filter returns ALL items, which is WRONG.
+
 QUERY PATTERN EXAMPLES:
 - COUNT:             "how many X"                → SELECT COUNT(*) FROM <schema>.<table>
 - AGGREGATE:         "total/sum/average of X"    → SELECT SUM(col) FROM <schema>.<table> GROUP BY ...
@@ -352,31 +379,35 @@ def generate_sql_with_retry(
         last_reasoning = reasoning
         last_sql = sql
 
-        # Run validation if db_key provided, else basic check
+        # Check 1: semantic validation (above-average filter etc.)
+        semantic_error = check_above_average_filter(sql, question)
+
+        # Check 2: structural validation
+        structural_error = None
         try:
             if db_key:
                 validate_sql(sql, db_key, schema_name)
-            elif not sql.strip().upper().startswith("SELECT"):
-                raise ValueError("Query must be a SELECT statement")
+        except ValueError as e:
+            structural_error = str(e)
 
-            print(f"[DEBUG] SQL validated successfully on attempt {attempt + 1}")
+        error_msg = semantic_error or structural_error
+
+        if not error_msg:
+            print(f"[DEBUG] SQL passed all checks on attempt {attempt + 1}")
             return reasoning, sql
 
-        except ValueError as e:
-            error_msg = str(e)
-            print(f"[DEBUG] Attempt {attempt + 1} failed: {error_msg}")
+        print(f"[DEBUG] Attempt {attempt + 1} failed: {error_msg}")
 
-            if attempt < max_retries:
-                current_question = (
-                    f"{question}\n\n"
-                    f"Your previous attempt produced invalid SQL.\n"
-                    f"Error: {error_msg}\n"
-                    f"Bad SQL:\n{sql}\n\n"
-                    f"Fix the error. Do not repeat the same mistake."
-                )
+        if attempt < max_retries:
+            current_question = (
+                f"{question}\n\n"
+                f"Your previous attempt was WRONG.\n"
+                f"Error: {error_msg}\n"
+                f"Bad SQL:\n{sql}\n\n"
+                f"Fix the error. Do not repeat the same mistake."
+            )
 
-    # Return best effort after all retries exhausted
-    print(f"[WARN] All {max_retries + 1} attempts failed. Returning last generated SQL.")
+    print(f"[WARN] All attempts failed. Returning last generated SQL.")
     return last_reasoning, last_sql
 
 

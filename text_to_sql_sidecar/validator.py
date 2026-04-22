@@ -75,49 +75,81 @@ def fix_common_sql_errors(parsed: exp.Expression, sqlglot_dialect: str) -> exp.E
             but does not add rating_count to GROUP BY — PostgreSQL rejects this.
     2. More fixes can be added here as new patterns are identified.
     """
+
+    # --- Fix 1: Remove ungrouped SELECT expressions (existing logic) ---
     for select in parsed.find_all(exp.Select):
         group_by = select.args.get("group")
         if not group_by:
             continue
 
-        # Build set of column names that are explicitly in GROUP BY
         grouped_cols = set()
         for g in group_by.expressions:
             if isinstance(g, exp.Column):
                 grouped_cols.add(g.name.lower())
             elif isinstance(g, exp.Cast):
-                # Handle CAST(col AS type) in GROUP BY
                 col = g.find(exp.Column)
                 if col:
                     grouped_cols.add(col.name.lower())
 
-        # Find SELECT expressions that are non-aggregated columns not in GROUP BY
         to_remove = []
         for expr in select.expressions:
-            # Only inspect aliased expressions (e.g. CAST(...) AS rating_count)
             if not isinstance(expr, exp.Alias):
                 continue
-
             inner = expr.this
-
-            # Check if the inner expression is a non-aggregated column or CAST of a column
             if isinstance(inner, (exp.Column, exp.Cast)):
-                # Make sure it's not wrapped in an aggregate function
                 is_aggregated = any(
                     isinstance(inner, agg)
                     for agg in (exp.Sum, exp.Avg, exp.Count, exp.Max, exp.Min)
                 )
                 if is_aggregated:
                     continue
-
-                # Find the underlying column name
                 col = inner if isinstance(inner, exp.Column) else inner.find(exp.Column)
                 if col and col.name.lower() not in grouped_cols:
                     to_remove.append(expr)
                     print(f"[FIX] Removed non-grouped SELECT expression: {expr.sql(dialect=sqlglot_dialect)}")
-
         for expr in to_remove:
             select.expressions.remove(expr)
+
+    # --- Fix 2: Inject missing WHERE filter for above/below average CTE joins ---
+    # Detect pattern: two CTEs (one with avg per item, one with avg per group) joined together without a WHERE comparing the two averages.
+    with_clause = parsed.args.get("with")
+    if with_clause:
+        cte_aliases = {
+            cte.alias.lower(): cte
+            for cte in with_clause.expressions
+            if cte.alias
+        }
+
+        # Look for the outer SELECT that joins two CTEs
+        outer_select = parsed
+        if isinstance(outer_select, exp.With):
+            outer_select = outer_select.this
+
+        if isinstance(outer_select, exp.Select):
+            existing_where = outer_select.args.get("where")
+
+            # Find columns in SELECT that look like avg comparisons
+            avg_aliases = [expr.alias.lower() for expr in outer_select.expressions if isinstance(expr, exp.Alias)]
+            item_avg_col = next((a for a in avg_aliases if "product" in a or "item" in a), None)
+            group_avg_col = next((a for a in avg_aliases if "category" in a or "group" in a), None)
+
+            if item_avg_col and group_avg_col and not existing_where:
+                # Find the actual avg column expressions
+                item_avg_expr = next(
+                    (expr for expr in outer_select.expressions if isinstance(expr, exp.Alias) and ("product" in expr.alias.lower() or "item" in expr.alias.lower())),
+                    None
+                )
+                group_avg_expr = next(
+                    (expr for expr in outer_select.expressions if isinstance(expr, exp.Alias) and ("category" in expr.alias.lower() or "group" in expr.alias.lower())),
+                    None
+                )
+                if item_avg_expr and group_avg_expr:
+                    filter_condition = exp.GT(
+                        this=item_avg_expr.this.copy(),
+                        expression=group_avg_expr.this.copy(),
+                    )
+                    outer_select.set("where", exp.Where(this=filter_condition))
+                    print(f"[FIX] Injected missing above-average WHERE filter")
 
     return parsed
 
