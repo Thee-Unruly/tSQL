@@ -7,7 +7,7 @@ from text_to_sql_sidecar.db_registry import list_databases, get_db_uri
 from text_to_sql_sidecar.validator import validate_sql, set_allowed_tables
 from text_to_sql_sidecar.schema_cache import get_schema, get_schema_with_types, get_engine_dialect
 from text_to_sql_sidecar.executor import execute_query
-from text_to_sql_sidecar.llm_client import generate_sql, generate_sql_with_reasoning, generate_sql_with_reasoning_streaming
+from text_to_sql_sidecar.llm_client import generate_sql, generate_sql_with_reasoning, generate_sql_with_reasoning_streaming, generate_sql_with_retry
 from text_to_sql_sidecar.schema_filter import filter_schema_by_relevance
 import json
 
@@ -85,7 +85,15 @@ def post_query(req: QueryRequest):
                     schema_lines.append(f"Schema {schema_name}, Table {table_name}: {', '.join(col_strs)}")
             schema_str = "\n".join(schema_lines)
             db_type = get_engine_dialect(req.db_key)
-            reasoning, sql = generate_sql_with_reasoning(schema_str, req.question, db_type=db_type)
+            reasoning, sql = generate_sql_with_retry(
+                schema=schema_str,
+                question=req.question,
+                model="gemma2-9b",
+                db_type=db_type,
+                db_key=req.db_key,
+                schema_name=req.schema_name,
+                max_retries=2,
+            )
             print(f"[DEBUG] Reasoning: {reasoning}")
         validated_sql = validate_sql(sql, req.db_key, req.schema_name)
         results = execute_query(req.db_key, validated_sql)
@@ -122,26 +130,19 @@ def post_query_stream(req: QueryRequest):
                     schema_lines.append(f"Schema {schema_name}, Table {table_name}: {', '.join(col_strs)}")
             schema_str = "\n".join(schema_lines)
 
-            # Stream LLM reasoning
+            # Use retry loop for validation before streaming results
             db_type = get_engine_dialect(req.db_key)
-            sql = None
-            for event_type, data in generate_sql_with_reasoning_streaming(schema_str, req.question, db_type=db_type):
-                if event_type == "reasoning_chunk":
-                    # Stream reasoning chunks as they arrive
-                    yield f"data: {json.dumps({'type': 'reasoning_chunk', 'content': data})}\n\n"
-                elif event_type == "reasoning_complete":
-                    # Reasoning complete, emit full reasoning
-                    yield f"data: {json.dumps({'type': 'reasoning_complete', 'content': data})}\n\n"
-                elif event_type == "sql":
-                    sql = data
-                    yield f"data: {json.dumps({'type': 'sql_generated', 'content': data})}\n\n"
-                elif event_type == "error":
-                    yield f"data: {json.dumps({'type': 'error', 'content': data})}\n\n"
-                    return
-            
-            if not sql:
-                yield f"data: {json.dumps({'type': 'error', 'content': 'Failed to generate SQL'})}\n\n"
-                return
+            reasoning, sql = generate_sql_with_retry(
+                schema=schema_str,
+                question=req.question,
+                model="gemma2-9b",
+                db_type=db_type,
+                db_key=req.db_key,
+                schema_name=req.schema_name,
+                max_retries=2,
+            )
+            yield f"data: {json.dumps({'type': 'reasoning_complete', 'content': reasoning})}\n\n"
+            yield f"data: {json.dumps({'type': 'sql_generated', 'content': sql})}\n\n"
             
             # Validate and execute SQL
             try:

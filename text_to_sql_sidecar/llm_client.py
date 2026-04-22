@@ -1,27 +1,6 @@
-def check_above_average_filter(sql: str, question: str) -> 'Optional[str]':
-    """
-    For 'above average' questions, check that the outer SELECT
-    has a WHERE comparing the two avg columns.
-    Returns an error message if the filter is missing, else None.
-    """
-    question_lower = question.lower()
-    above_average_triggers = ["above average", "above the average", "exceed the average", "higher than average"]
-    if not any(trigger in question_lower for trigger in above_average_triggers):
-        return None  # not an above-average question, skip check
-
-    sql_upper = sql.upper()
-    # Check that a WHERE clause exists after the CTEs
-    # A valid above-average query must filter pa.avg > ca.avg somewhere
-    if "WHERE" not in sql_upper.split("SELECT")[-1]:
-        return (
-            "Your query is missing the WHERE filter that restricts results to above-average items. "
-            "The final SELECT must include: WHERE pa.avg_product_rating > ca.avg_category_rating. "
-            "Without this, ALL products are returned, not just above-average ones."
-        )
-    return None
 import os
 import requests
-from typing import Tuple, Generator
+from typing import Tuple, Generator, Optional
 import json
 
 LITELLM_API_URL = os.getenv("LITELLM_API_URL", "http://localhost:7072/v1/chat/completions")
@@ -29,6 +8,74 @@ LITELLM_API_KEY = os.getenv("LITELLM_API_KEY", "")
 
 if not LITELLM_API_KEY:
     print("[WARN] LITELLM_API_KEY environment variable not set. LLM queries will fail until it is configured.")
+
+
+def check_above_average_filter(sql: str, question: str) -> Optional[str]:
+    """
+    For 'above average' questions, check that the outer SELECT
+    has a WHERE comparing the two avg columns.
+    Returns an error message if the filter is missing, else None.
+    """
+    import re
+    
+    question_lower = question.lower()
+    above_average_triggers = [
+        "above average", "above the average", "above the category average",
+        "above their category average", "above category average",
+        "exceed the average", "exceed average", "exceeds the average",
+        "higher than average", "higher than the average",
+        "better than average", "better than the average",
+        "above the mean",
+    ]
+    
+    print(f"[DEBUG] check_above_average_filter: question='{question_lower}'")
+    print(f"[DEBUG] trigger match: {any(trigger in question_lower for trigger in above_average_triggers)}")
+    
+    if not any(trigger in question_lower for trigger in above_average_triggers):
+        return None
+
+    sql_upper = sql.upper()
+    
+    # More reliable: find the last SELECT keyword which is the outer query
+    if "WITH" in sql_upper:
+        matches = [m.start() for m in re.finditer(r'\bSELECT\b', sql, re.IGNORECASE)]
+        if len(matches) > 1:
+            # Last SELECT is the outer query
+            after_ctes = sql[matches[-1]:]
+        else:
+            after_ctes = sql
+    else:
+        after_ctes = sql
+
+    print(f"[DEBUG] after_ctes section (first 300 chars): '{after_ctes[:300]}'")
+    print(f"[DEBUG] WHERE in after_ctes: {'WHERE' in after_ctes.upper()}")
+
+    if "WHERE" not in after_ctes.upper():
+        print(f"[FIX] Missing WHERE filter for above-average query")
+        return (
+            "Your query is missing the WHERE filter that restricts results to above-average items. "
+            "The final SELECT must include: WHERE pa.avg_product_rating > ca.avg_category_rating. "
+            "Without this, ALL products are returned, not just above-average ones."
+        )
+
+    print(f"[DEBUG] WHERE filter found, check passed")
+
+    # Check 2: category/group CTE must have the same review count filter as the item CTE
+    if "category_averages" in sql.lower() or "group_avg" in sql.lower():
+        cte_sections = sql.upper().split("GROUP BY")
+        category_cte = next(
+            (s for s in cte_sections if "CATEGORY" in s and "AVG" in s), ""
+        )
+        if "WHERE" not in category_cte:
+            print(f"[FIX] category_averages CTE missing review count filter")
+            return (
+                "The category_averages CTE is missing the review count filter. "
+                "Both CTEs must filter with WHERE CAST(rating_count AS INT) >= 5 "
+                "so the category average is computed on the same data as product averages."
+            )
+
+    return None
+
 
 # Per-dialect SQL rules injected into the prompt
 DB_RULES: dict = {
