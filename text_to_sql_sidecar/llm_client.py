@@ -137,6 +137,7 @@ SELECT
     ROUND(i.item_avg_value - g.group_avg_value, 2)  AS rating_difference
 FROM item_avg i
 JOIN group_avg g ON i.<group_column> = g.<group_column>
+-- REQUIRED: this is what "above average" means — never omit this filter
 WHERE i.item_avg_value > g.group_avg_value  -- Filter items above group average
 ORDER BY i.<group_column>, rating_difference DESC NULLS LAST;"""
     },
