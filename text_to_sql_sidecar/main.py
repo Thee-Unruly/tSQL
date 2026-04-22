@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Any
 from text_to_sql_sidecar.db_registry import list_databases, get_db_uri
 from text_to_sql_sidecar.validator import validate_sql, set_allowed_tables
-from text_to_sql_sidecar.schema_cache import get_schema, get_schema_with_types
+from text_to_sql_sidecar.schema_cache import get_schema, get_schema_with_types, get_engine_dialect
 from text_to_sql_sidecar.executor import execute_query
 from text_to_sql_sidecar.llm_client import generate_sql, generate_sql_with_reasoning, generate_sql_with_reasoning_streaming
 from text_to_sql_sidecar.schema_filter import filter_schema_by_relevance
@@ -84,7 +84,8 @@ def post_query(req: QueryRequest):
                     col_strs = [f"{c} ({col_type_map.get(c, 'unknown')})" for c in cols]
                     schema_lines.append(f"Schema {schema_name}, Table {table_name}: {', '.join(col_strs)}")
             schema_str = "\n".join(schema_lines)
-            reasoning, sql = generate_sql_with_reasoning(schema_str, req.question)
+            db_type = get_engine_dialect(req.db_key)
+            reasoning, sql = generate_sql_with_reasoning(schema_str, req.question, db_type=db_type)
             print(f"[DEBUG] Reasoning: {reasoning}")
         validated_sql = validate_sql(sql, req.db_key, req.schema_name)
         results = execute_query(req.db_key, validated_sql)
@@ -120,10 +121,11 @@ def post_query_stream(req: QueryRequest):
                     col_strs = [f"{c} ({col_type_map.get(c, 'unknown')})" for c in cols]
                     schema_lines.append(f"Schema {schema_name}, Table {table_name}: {', '.join(col_strs)}")
             schema_str = "\n".join(schema_lines)
-            
+
             # Stream LLM reasoning
+            db_type = get_engine_dialect(req.db_key)
             sql = None
-            for event_type, data in generate_sql_with_reasoning_streaming(schema_str, req.question):
+            for event_type, data in generate_sql_with_reasoning_streaming(schema_str, req.question, db_type=db_type):
                 if event_type == "reasoning_chunk":
                     # Stream reasoning chunks as they arrive
                     yield f"data: {json.dumps({'type': 'reasoning_chunk', 'content': data})}\n\n"
