@@ -4,9 +4,10 @@ from typing import Tuple, Generator
 import json
 
 LITELLM_API_URL = os.getenv("LITELLM_API_URL", "http://localhost:7072/v1/chat/completions")
-LITELLM_API_KEY = os.getenv("LITELLM_API_KEY")
+LITELLM_API_KEY = os.getenv("LITELLM_API_KEY", "")
+
 if not LITELLM_API_KEY:
-    raise RuntimeError("LITELLM_API_KEY environment variable not set")
+    print("[WARN] LITELLM_API_KEY environment variable not set. LLM queries will fail until it is configured.")
 
 # Per-dialect SQL rules injected into the prompt
 DB_RULES: dict = {
@@ -96,6 +97,9 @@ def generate_sql_with_reasoning(schema: str, question: str, model: str = "gemma2
     Generate SQL with reasoning step.
     Returns: (reasoning, sql)
     """
+    if not LITELLM_API_KEY:
+        raise RuntimeError("LITELLM_API_KEY environment variable must be set before making LLM requests")
+    
     prompt = build_prompt(schema, question, db_type)
     headers = {
         "Authorization": f"Bearer {LITELLM_API_KEY}",
