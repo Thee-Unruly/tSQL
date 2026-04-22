@@ -102,7 +102,7 @@ def generate_sql_with_reasoning(schema: str, question: str, model: str = "gemma2
     
     prompt = build_prompt(schema, question, db_type)
     headers = {
-        "Authorization": f"Bearer {LITELLM_API_KEY}",
+        "api-key": LITELLM_API_KEY,
         "Content-Type": "application/json"
     }
     payload = {
@@ -157,7 +157,7 @@ def generate_sql_with_reasoning_streaming(schema: str, question: str, model: str
     """
     prompt = build_prompt(schema, question, db_type)
     headers = {
-        "Authorization": f"Bearer {LITELLM_API_KEY}",
+        "api-key": LITELLM_API_KEY,
         "Content-Type": "application/json"
     }
     payload = {
