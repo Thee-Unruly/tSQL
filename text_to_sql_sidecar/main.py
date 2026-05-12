@@ -88,7 +88,6 @@ def post_query(req: QueryRequest):
             reasoning, sql = generate_sql_with_retry(
                 schema=schema_str,
                 question=req.question,
-                model="gemma2-9b",
                 db_type=db_type,
                 db_key=req.db_key,
                 schema_name=req.schema_name,
@@ -135,7 +134,6 @@ def post_query_stream(req: QueryRequest):
             reasoning, sql = generate_sql_with_retry(
                 schema=schema_str,
                 question=req.question,
-                model="gemma2-9b",
                 db_type=db_type,
                 db_key=req.db_key,
                 schema_name=req.schema_name,

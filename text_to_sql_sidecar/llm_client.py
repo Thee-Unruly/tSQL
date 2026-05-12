@@ -3,11 +3,51 @@ import requests
 from typing import Tuple, Generator, Optional
 import json
 
-LITELLM_API_URL = os.getenv("LITELLM_API_URL", "http://localhost:7072/v1/chat/completions")
-LITELLM_API_KEY = os.getenv("LITELLM_API_KEY", "")
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8000")
+APP_NAME = os.getenv("APP_NAME", "text-to-sql-sidecar")
+DEFAULT_GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+DEFAULT_OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 
-if not LITELLM_API_KEY:
-    print("[WARN] LITELLM_API_KEY environment variable not set. LLM queries will fail until it is configured.")
+
+def _resolve_llm_config(model: Optional[str] = None) -> Tuple[str, dict, str, str]:
+    if GROQ_API_KEY:
+        return (
+            GROQ_API_URL,
+            {
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            model or DEFAULT_GROQ_MODEL,
+            "Groq",
+        )
+
+    if OPENROUTER_API_KEY:
+        return (
+            OPENROUTER_API_URL,
+            {
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": APP_BASE_URL,
+                "X-Title": APP_NAME,
+            },
+            model or DEFAULT_OPENROUTER_MODEL,
+            "OpenRouter",
+        )
+
+    raise RuntimeError(
+        "Set GROQ_API_KEY or OPENROUTER_API_KEY before making LLM requests"
+    )
+
+
+try:
+    _, _, _, provider_name = _resolve_llm_config()
+    print(f"[INFO] LLM provider configured: {provider_name}")
+except RuntimeError:
+    print("[WARN] GROQ_API_KEY and OPENROUTER_API_KEY are not set. LLM queries will fail until one is configured.")
 
 
 def check_above_average_filter(sql: str, question: str) -> Optional[str]:
@@ -367,23 +407,17 @@ def _parse_reasoning_and_sql(content: str) -> Tuple[str, str]:
 def generate_sql_with_reasoning(
     schema: str,
     question: str,
-    model: str = "gemma2-9b",
+    model: Optional[str] = None,
     db_type: str = "postgresql"
 ) -> Tuple[str, str]:
     """
     Generate SQL with reasoning step.
     Returns: (reasoning, sql)
     """
-    if not LITELLM_API_KEY:
-        raise RuntimeError("LITELLM_API_KEY environment variable must be set before making LLM requests")
-
+    api_url, headers, resolved_model, provider_name = _resolve_llm_config(model)
     prompt = build_prompt(schema, question, db_type)
-    headers = {
-        "api-key": LITELLM_API_KEY,
-        "Content-Type": "application/json",
-    }
     payload = {
-        "model": model,
+        "model": resolved_model,
         "messages": [
             {"role": "system", "content": "You are a helpful assistant that writes SQL queries. Think through the problem carefully."},
             {"role": "user", "content": prompt},
@@ -392,7 +426,8 @@ def generate_sql_with_reasoning(
         "temperature": 0.0,
     }
 
-    resp = requests.post(LITELLM_API_URL, headers=headers, json=payload)
+    print(f"[DEBUG] Sending LLM request via {provider_name} using model '{resolved_model}'")
+    resp = requests.post(api_url, headers=headers, json=payload, timeout=60)
     resp.raise_for_status()
     content = resp.json()["choices"][0]["message"]["content"].strip()
     return _parse_reasoning_and_sql(content)
@@ -401,7 +436,7 @@ def generate_sql_with_reasoning(
 def generate_sql_with_retry(
     schema: str,
     question: str,
-    model: str = "gemma2-9b",
+    model: Optional[str] = None,
     db_type: str = "postgresql",
     db_key: str = None,
     schema_name: str = None,
@@ -461,7 +496,7 @@ def generate_sql_with_retry(
 def generate_sql(
     schema: str,
     question: str,
-    model: str = "gemma2-9b",
+    model: Optional[str] = None,
     db_type: str = "postgresql"
 ) -> str:
     """Backward compatible wrapper that returns only SQL."""
@@ -472,7 +507,7 @@ def generate_sql(
 def generate_sql_with_reasoning_streaming(
     schema: str,
     question: str,
-    model: str = "gemma2-9b",
+    model: Optional[str] = None,
     db_type: str = "postgresql"
 ) -> Generator[Tuple[str, str], None, None]:
     """
@@ -480,13 +515,10 @@ def generate_sql_with_reasoning_streaming(
     Yields (event_type, data) tuples as the LLM responds.
     event_type can be: "reasoning_chunk", "reasoning_complete", "sql", "error"
     """
+    api_url, headers, resolved_model, provider_name = _resolve_llm_config(model)
     prompt = build_prompt(schema, question, db_type)
-    headers = {
-        "api-key": LITELLM_API_KEY,
-        "Content-Type": "application/json",
-    }
     payload = {
-        "model": model,
+        "model": resolved_model,
         "messages": [
             {"role": "system", "content": "You are a helpful assistant that writes SQL queries. Think through the problem carefully."},
             {"role": "user", "content": prompt},
@@ -497,7 +529,8 @@ def generate_sql_with_reasoning_streaming(
     }
 
     try:
-        resp = requests.post(LITELLM_API_URL, headers=headers, json=payload, stream=True)
+        print(f"[DEBUG] Streaming LLM request via {provider_name} using model '{resolved_model}'")
+        resp = requests.post(api_url, headers=headers, json=payload, stream=True, timeout=60)
         resp.raise_for_status()
 
         full_content = ""
